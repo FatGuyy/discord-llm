@@ -1,4 +1,4 @@
-# llmcord
+# discord-llm
 
 ![llmcord logo: a vaguely Discord Clyde-looking llama](docs/llmcord.png)
 
