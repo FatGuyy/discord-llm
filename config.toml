@@ -1,6 +1,6 @@
 [authentication]
-discord_token = "xxxxx"
-client_id = "xxxx"
+discord_token = "MTE5MTI2ODUxMDU2ODAzMDIzOQ.GmfNZp.RQVVXX4y97B2PS4MmXEbCM8AvyCDLsonjPQxRQ"
+client_id = "1191268510568030239"
 
 [model]
 path = "models/llama-2-7b-chat.ggmlv3.q2_K.bin"

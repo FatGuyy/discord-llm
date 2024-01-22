@@ -7,7 +7,7 @@ use rand::SeedableRng;
 use serenity::model::prelude::MessageId;
 use thiserror::Error;
 
-// Definition of custom error type InferenceError using the Error, Debug, and Clone traits
+// This enum Defines the custom error type InferenceError using the Error, Debug, and Clone traits
 #[derive(Debug, Error, Clone)]
 pub enum InferenceError {
     // Variant indicating that the generation process was cancelled
@@ -19,7 +19,7 @@ pub enum InferenceError {
     Custom(String),
 }
 
-// Implementation block for methods associated with InferenceError
+// Implementation of the block for methods associated with InferenceError
 impl InferenceError {
     // Constructor method for creating a custom InferenceError with a given message
     pub fn custom(s: impl Into<String>) -> Self {
@@ -28,7 +28,7 @@ impl InferenceError {
     }
 }
 
-// struct representing a request for text generation
+// This struct represents a request for text generation
 pub struct Request {
     // The input prompt for text generation
     pub prompt: String,
@@ -56,9 +56,12 @@ pub enum Token {
 
 // This function is responsible for creating a new thread to handle text generation requests
 pub fn make_thread(
-    model: Box<dyn llm::Model>, // Takes a model implementing the llm::Model trait
-    request_rx: flume::Receiver<Request>, // Receives requests through a channel
-    cancel_rx: flume::Receiver<MessageId>, // Listens for cancellation signals associated with Discord messages
+    // Takes a model implementing the llm::Model trait
+    model: Box<dyn llm::Model>,
+    // Receives requests through a channel
+    request_rx: flume::Receiver<Request>,
+    // Listens for cancellation signals associated with Discord messages
+    cancel_rx: flume::Receiver<MessageId>,
 ) -> JoinHandle<()> {
     // Spawns a new thread to continuously process incoming requests
     std::thread::spawn(move || loop {
@@ -66,7 +69,8 @@ pub fn make_thread(
         if let Ok(request) = request_rx.try_recv() {
             // Processes the received request using the provided model
             match process_incoming_request(&request, model.as_ref(), &cancel_rx) {
-                Ok(_) => {} // Do nothing if processing is successful
+                // Do nothing if processing is successful
+                Ok(_) => {}
                 Err(e) => {
                     // Sends an error token back through the communication channel if an error occurs
                     if let Err(err) = request.token_tx.send(Token::Error(e)) {
@@ -76,18 +80,22 @@ pub fn make_thread(
             }
         }
 
-        // Pauses the thread for a short duration to avoid excessive processing
+        // Pauses the thread, to avoid excessive processing
         std::thread::sleep(std::time::Duration::from_millis(5));
     })
 }
 
 // Function to process incoming text generation requests
 fn process_incoming_request(
-    request: &Request,                      // Information about the generation request
-    model: &dyn llm::Model,                 // The language model responsible for text generation
-    cancel_rx: &flume::Receiver<MessageId>, // Channel for receiving cancellation signals
+    // This holds all the information about the request
+    request: &Request,
+    // The model responsible for text/response generation
+    model: &dyn llm::Model,
+    // A channel for receiving cancellation signals
+    cancel_rx: &flume::Receiver<MessageId>,
 ) -> Result<(), InferenceError> {
     // Creating a random number generator with an optional seed
+    // This variable will be used to hold a random number generator
     let mut rng = if let Some(seed) = request.seed {
         rand::rngs::StdRng::seed_from_u64(seed)
     } else {
