@@ -55,7 +55,7 @@ impl Handler {
 // Implementation of the EventHandler trait for the Handler struct
 #[async_trait]
 impl EventHandler for Handler {
-    // Async method called when the bot is ready
+    //  method called when the bot is ready
     async fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} is connected; registering commands...", ready.user.name);
 
@@ -68,7 +68,7 @@ impl EventHandler for Handler {
         println!("{} is good to go!", ready.user.name);
     }
 
-    // Async method called when a user interacts with the bot
+    //  method called when a user interacts with the bot
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
         // Reference to the HTTP context for making HTTP requests
         let http = &ctx.http;
@@ -126,7 +126,7 @@ impl EventHandler for Handler {
     }
 }
 
-// Async function to handle the bot's readiness and command registration
+//  function to handle the bot's readiness and command registration
 async fn ready_handler(http: &Http, config: &Configuration) -> anyhow::Result<()> {
     // Retrieve the globally registered commands from Discord
     let registered_commands = Command::get_global_application_commands(http).await?;
@@ -189,7 +189,7 @@ fn create_parameters(
     })
 }
 
-// Async function to handle the hallucination process
+//  function to handle the hallucination process
 async fn hallucinate(
     cmd: &ApplicationCommandInteraction,
     http: &Http,
@@ -355,30 +355,57 @@ impl Prompts {
     }
 }
 
+// Definition of the Outputter struct
+// This code defines a Rust struct named 'Outputter', which is designed to handle the output of a Discord bot interaction.
+// this struct manages the output generation process, accumulates generated output,
+// handles message chunking, and maintains information about the Discord user and configuration settings for displaying prompts.
+// It also has mechanisms to track the state of the output generation and the time of the last update.
 struct Outputter<'a> {
+    // Reference to the Http client
     http: &'a Http,
 
+    // User ID associated with the Outputter
     user_id: UserId,
+
+    // Vector to store Discord messages
     messages: Vec<Message>,
+
+    // Vector to store message chunks
     chunks: Vec<String>,
 
+    // String to store the concatenated message
     message: String,
+
+    // Struct containing prompts configuration
     prompts: Prompts,
 
+    // Flag indicating if the Outputter is in a terminal state
     in_terminal_state: bool,
 
+    // Instant representing the last update time
     last_update: std::time::Instant,
+
+    // Duration defining the time between updates
     last_update_duration: std::time::Duration,
 }
+
+// the <'a> syntax is a lifetime parameter,
+// and it's used to specify the lifetime of references within a struct or a function.
+// Lifetime parameters are used to ensure that references in the struct are valid for the entire lifetime of the struct.
+// This is particularly useful when dealing with references that have a longer or shorter lifetime
+// than the struct they are part of. This helps in memory safety
 impl<'a> Outputter<'a> {
+    // constant defining the maximum size for message chunks
     const MESSAGE_CHUNK_SIZE: usize = 1500;
 
+    // function to create a new Outputter instance
     async fn new(
-        http: &'a Http,
-        cmd: &ApplicationCommandInteraction,
-        prompts: Prompts,
-        last_update_duration: std::time::Duration,
+        http: &'a Http,                            // Reference to Http with lifetime 'a
+        cmd: &ApplicationCommandInteraction,       // Discord Application Command Interaction
+        prompts: Prompts,                          // Struct containing information about prompts
+        last_update_duration: std::time::Duration, // Duration for updating messages
     ) -> anyhow::Result<Outputter<'a>> {
+        // Create an interaction response with Discord using a closure
         cmd.create_interaction_response(http, |response| {
             response
                 .kind(InteractionResponseType::ChannelMessageWithSource)
@@ -396,8 +423,11 @@ impl<'a> Outputter<'a> {
                 })
         })
         .await?;
+
+        // Get the initial interaction response from Discord
         let starting_message = cmd.get_interaction_response(http).await?;
 
+        // Create and return a new Outputter instance
         Ok(Self {
             http,
 
@@ -415,11 +445,15 @@ impl<'a> Outputter<'a> {
         })
     }
 
+    // function to process a new token and update the Outputter
+    // processes a new token, accumulates it to the message, and updates message chunks
     async fn new_token(&mut self, token: &str) -> anyhow::Result<()> {
+        // Check if the Outputter is in a terminal state
         if self.in_terminal_state {
             return Ok(());
         }
 
+        // If the accumulated message is empty, add the cancellation button to the first message
         if self.message.is_empty() {
             // Add the cancellation button when we receive the first token
             if let Some(first) = self.messages.first_mut() {
@@ -427,14 +461,17 @@ impl<'a> Outputter<'a> {
             }
         }
 
+        // Accumulate the token to the message
         self.message += token;
 
-        // This could be much more efficient but that's a problem for later
+        // Process the message and split it into chunks
         self.chunks = {
             let mut chunks: Vec<String> = vec![];
 
+            // Convert the message to markdown and split it into words
             let markdown = self.prompts.make_markdown_message(&self.message);
             for word in markdown.split(' ') {
+                // If there is a last chunk and it exceeds the maximum size, start a new chunk
                 if let Some(last) = chunks.last_mut() {
                     if last.len() > Self::MESSAGE_CHUNK_SIZE {
                         chunks.push(word.to_string());
@@ -450,6 +487,7 @@ impl<'a> Outputter<'a> {
             chunks
         };
 
+        // if its time to update messages based on elapsed time
         if self.last_update.elapsed() > self.last_update_duration {
             self.sync_messages_with_chunks().await?;
             self.last_update = std::time::Instant::now();
@@ -458,60 +496,76 @@ impl<'a> Outputter<'a> {
         Ok(())
     }
 
+    // function to handle errors and update the Outputter
+    // it handle errors and cancellation, updating the Outputter.
     async fn error(&mut self, err: &str) -> anyhow::Result<()> {
         self.on_error(err).await
     }
 
+    // function to handle cancellation and update the Outputter
     async fn cancelled(&mut self) -> anyhow::Result<()> {
         self.on_error("The generation was cancelled.").await
     }
 
+    // function to finish processing and update the Outputter
+    // finishes processing, removes components from messages, and updates based on remaining chunks.
     async fn finish(&mut self) -> anyhow::Result<()> {
+        // Edit all messages to remove components
         for msg in &mut self.messages {
             msg.edit(self.http, |m| m.set_components(CreateComponents::default()))
                 .await?;
         }
 
+        // Update messages based on the remaining chunks
         self.sync_messages_with_chunks().await?;
 
         Ok(())
     }
 
+    // function to synchronize messages with chunks. what it does -
+    // 1. Updates the content of the last message with the latest chunk.
+    // 2. Removes components from existing messages.
+    // 3. Creates new messages for remaining chunks and adds a cancel button to the last message
     async fn sync_messages_with_chunks(&mut self) -> anyhow::Result<()> {
         // Update the last message with its latest state, then insert the remaining chunks in one go
         if let Some((msg, chunk)) = self.messages.iter_mut().zip(self.chunks.iter()).last() {
-            msg.edit(self.http, |m| m.content(chunk)).await?;
+            msg.edit(self.http, |m| m.content(chunk)).await?; // Update the content of the last message
         }
 
         if self.chunks.len() <= self.messages.len() {
-            return Ok(());
+            return Ok(()); // Return if there are no new chunks
         }
 
         // Remove the cancel button from all existing messages
         for msg in &mut self.messages {
             msg.edit(self.http, |m| m.set_components(CreateComponents::default()))
-                .await?;
+                .await?; // Remove components from existing messages
         }
 
         // Create new messages for the remaining chunks
         let Some(first_id) = self.messages.first().map(|m| m.id) else {
-            return Ok(());
+            return Ok(()); // Return if there are no existing messages
         };
         for chunk in self.chunks[self.messages.len()..].iter() {
             let last = self.messages.last_mut().unwrap();
-            let msg = last.reply(self.http, chunk).await?;
-            self.messages.push(msg);
+            let msg = last.reply(self.http, chunk).await?; // Reply to the last message with new chunk
+            self.messages.push(msg); // Store the new message
         }
 
         // Add the cancel button to the last message
         if let Some(last) = self.messages.last_mut() {
-            add_cancel_button(self.http, first_id, last, self.user_id).await?;
+            add_cancel_button(self.http, first_id, last, self.user_id).await?; // Add a cancel button to the last message
         }
 
         Ok(())
     }
 
+    // function to handle errors and update the Outputter
+    // Replaces the content of all messages with strikethrough text
+    // Replies to the last message with an error message
+    // Sets the terminal state flag to true
     async fn on_error(&mut self, error_message: &str) -> anyhow::Result<()> {
+        // Edit all messages to replace content with strikethrough text
         for msg in &mut self.messages {
             let cut_content = format!("~~{}~~", msg.content);
             msg.edit(self.http, |m| {
@@ -522,33 +576,37 @@ impl<'a> Outputter<'a> {
         }
 
         let Some(last) = self.messages.last_mut() else {
-            return Ok(());
+            return Ok(()); // Return if there are no messages
         };
-        last.reply(self.http, error_message).await?;
+        last.reply(self.http, error_message).await?; // Reply to the last message with an error message
 
-        self.in_terminal_state = true;
+        self.in_terminal_state = true; // Set the terminal state flag
 
         Ok(())
     }
 }
 
+// function to add a cancel button to a message
 async fn add_cancel_button(
     http: &Http,
     first_id: MessageId,
     msg: &mut Message,
     user_id: UserId,
 ) -> anyhow::Result<()> {
+    // edit the message to include a cancel button
     Ok(msg
         .edit(http, |r| {
+            // creates a new set of components with a single action row
             let mut components = CreateComponents::default();
             components.create_action_row(|r| {
+                // create a button in the action row
                 r.create_button(|b| {
-                    b.custom_id(format!("cancel#{first_id}#{user_id}"))
-                        .style(component::ButtonStyle::Danger)
-                        .label("Cancel")
+                    b.custom_id(format!("cancel#{first_id}#{user_id}")) // custom identifier for the button
+                        .style(component::ButtonStyle::Danger) // style of the button (red/danger)
+                        .label("Cancel") // displays label on the button
                 })
             });
-            r.set_components(components)
+            r.set_components(components) // sets the created components in the message edit request
         })
-        .await?)
+        .await?) // Perform the edit operation asynchronously and return the result
 }
